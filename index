@@ -1,446 +1,341 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Future Mind - Interactive Learning Platform</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Poppins:wght@300;400;600&display=swap');
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-            color: white;
-            min-height: 100vh;
-            overflow-x: hidden;
-        }
-        
-        .orbitron-font {
-            font-family: 'Orbitron', monospace;
-        }
-        
-        .rocket-container {
-            position: relative;
-            width: 100%;
-            height: 300px;
-            overflow: hidden;
-        }
-        
+/*
+FutureMind - Single-file React component
+Place this file in a React project (e.g. create-react-app). Tailwind CSS is used for styling. 
+Instructions to run:
+1) Create React app: npx create-react-app futuremind
+2) Install Tailwind per Tailwind docs OR use a CDN build for quick test (for production use Tailwind properly).
+3) Add this component as src/App.jsx and run `npm start`.
+
+Notes on functionality implemented client-side:
+- Animated rocket on landing with "Created by Asus Kumar" and a book image.
+- Quick quiz generator from typed text or from an uploaded image using Tesseract.js (client-side OCR).
+- "Generate question paper" extracts the longest/most complex sentences from image/text as "hard questions".
+- "Friend" button triggers a dangerous animation (red pulse + shake), then reveals group-add UI.
+- Group UI shows online count, ability to add mock users, and a built-in chat with gallery (attach images) and "generate quiz" button.
+
+This is a front-end only demo. OCR accuracy depends on Tesseract; for best results, use clear images.
+*/
+
+import React, { useState, useRef } from "react";
+
+// Load Tesseract via CDN - in index.html add: 
+// <script src="https://unpkg.com/tesseract.js@v4.0.2/dist/tesseract.min.js"></script>
+// If you don't want OCR, users can type/paste text.
+
+export default function FutureMindApp() {
+  const [page, setPage] = useState("home");
+  const [message, setMessage] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const [onlineUsers, setOnlineUsers] = useState(["Asus", "Priya", "Ravi"]);
+  const [groupVisible, setGroupVisible] = useState(false);
+  const [dangerAnim, setDangerAnim] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrText, setOcrText] = useState("");
+  const [generatedQuiz, setGeneratedQuiz] = useState([]);
+  const fileInputRef = useRef(null);
+  const [uploadedImageURL, setUploadedImageURL] = useState(null);
+
+  // Utility: split text into candidate "questions" and pick hardest ones by length
+  function extractHardQuestions(text, count = 5) {
+    if (!text) return [];
+    // Split by question marks, newlines, and sentences
+    const raw = text
+      .replace(/\r/g, "\n")
+      .split(/[\n?.!]+/) // split on punctuation
+      .map(s => s.trim())
+      .filter(Boolean);
+    // heuristics: longer sentences are probably harder
+    raw.sort((a, b) => b.length - a.length);
+    return raw.slice(0, count).map((q, i) => ({ id: i + 1, text: q }));
+  }
+
+  async function handleImageUpload(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setUploadedImageURL(url);
+    if (!window.Tesseract) {
+      alert("Tesseract.js not loaded. Add the CDN script to index.html to enable OCR.");
+      return;
+    }
+    setOcrLoading(true);
+    try {
+      // @ts-ignore
+      const { createWorker } = window.Tesseract;
+      const worker = createWorker({ logger: m => console.log(m) });
+      await worker.load();
+      await worker.loadLanguage("eng");
+      await worker.initialize("eng");
+      const { data } = await worker.recognize(file);
+      await worker.terminate();
+      setOcrText(data.text);
+      // auto-generate quiz
+      const q = extractHardQuestions(data.text, 6);
+      setGeneratedQuiz(q);
+    } catch (err) {
+      console.error(err);
+      alert("OCR failed: " + err.message);
+    } finally {
+      setOcrLoading(false);
+    }
+  }
+
+  function handleSendMessage() {
+    if (!message.trim()) return;
+    const newMsg = { id: Date.now(), text: message, from: "You", time: new Date().toLocaleTimeString() };
+    setChatMessages(prev => [...prev, newMsg]);
+    setMessage("");
+  }
+
+  function handleFriendClick() {
+    // trigger dangerous animation briefly, then reveal group UI
+    setDangerAnim(true);
+    setTimeout(() => {
+      setDangerAnim(false);
+      setGroupVisible(true);
+    }, 2500); // 2.5 seconds animation
+  }
+
+  function handleAddUser() {
+    const newName = "User" + Math.floor(Math.random() * 900 + 100);
+    setOnlineUsers(prev => [...prev, newName]);
+  }
+
+  function handleGenerateQuizFromText(textInput) {
+    const q = extractHardQuestions(textInput || ocrText, 6);
+    setGeneratedQuiz(q);
+  }
+
+  function handleSendImageToChat(file) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    const newMsg = { id: Date.now(), text: "[Image]", image: url, from: "You", time: new Date().toLocaleTimeString() };
+    setChatMessages(prev => [...prev, newMsg]);
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-white p-6 font-sans">
+      <header className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-extrabold">FutureMind</h1>
+          <nav className="space-x-4">
+            <button onClick={() => setPage("home")} className="px-3 py-1 rounded hover:bg-indigo-100">Home</button>
+            <button onClick={() => setPage("quiz")} className="px-3 py-1 rounded hover:bg-indigo-100">Quiz</button>
+            <button onClick={() => setPage("paper")} className="px-3 py-1 rounded hover:bg-indigo-100">Generate Question Paper</button>
+            <button onClick={() => setPage("chat")} className="px-3 py-1 rounded hover:bg-indigo-100">Chat</button>
+          </nav>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto mt-8">
+        {page === "home" && (
+          <section className="bg-white p-6 rounded-2xl shadow-lg relative overflow-hidden">
+            {/* Rocket animation */}
+            <div className="flex items-center space-x-6">
+              <div className="w-40 h-40 relative">
+                <div className={`rocket absolute bottom-0 left-0 transform ${dangerAnim ? "danger-rocket" : ""}`}></div>
+              </div>
+              <div>
+                <div className="text-lg">Created by <span className="font-semibold">Asus Kumar</span></div>
+                <p className="mt-2">Welcome to FutureMind — click buttons to explore interactive quiz & group features.</p>
+                <div className="mt-4 flex gap-3">
+                  <button onClick={() => setPage("quiz")} className="px-4 py-2 rounded bg-indigo-600 text-white">Take Quiz</button>
+                  <button onClick={() => setPage("paper")} className="px-4 py-2 rounded border">Generate Paper</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center gap-4">
+              <img src="https://images.unsplash.com/photo-1512820790803-83ca734da794?q=80&w=400&auto=format&fit=crop&ixlib=rb-4.0.3&s=12345" alt="book" className="w-32 h-40 object-cover rounded shadow" />
+              <div className="text-sm text-gray-600">A sample book image — replace with your own book cover.</div>
+            </div>
+
+            <div className="mt-6 text-xs text-gray-500">Tip: Use the 'Friend' button to see group & dangerous animation.</div>
+            <div className="mt-4">
+              <button onClick={handleFriendClick} className="px-4 py-2 rounded bg-red-500 text-white">Friend</button>
+            </div>
+          </section>
+        )}
+
+        {page === "quiz" && (
+          <section className="bg-white p-6 rounded-2xl shadow-lg">
+            <h2 className="text-xl font-bold">Quick Quiz Generator</h2>
+            <p className="text-sm text-gray-600 mt-1">Type a paragraph or upload an image and press Generate Quiz.</p>
+
+            <textarea value={ocrText} onChange={e => setOcrText(e.target.value)} rows={6} className="w-full mt-3 p-3 border rounded" placeholder="Type/paste text or upload an image..." />
+
+            <div className="mt-3 flex items-center gap-3">
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} />
+              <button onClick={() => handleGenerateQuizFromText(ocrText)} className="px-4 py-2 rounded bg-indigo-600 text-white">Generate Quiz</button>
+              <div className="ml-3">{ocrLoading && <span>OCR running...</span>}</div>
+            </div>
+
+            {generatedQuiz.length > 0 && (
+              <div className="mt-4">
+                <h3 className="font-semibold">Generated Quiz</h3>
+                <ol className="mt-2 list-decimal ml-5 space-y-2">
+                  {generatedQuiz.map(q => (
+                    <li key={q.id} className="p-2 bg-indigo-50 rounded">{q.text}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+          </section>
+        )}
+
+        {page === "paper" && (
+          <section className="bg-white p-6 rounded-2xl shadow-lg">
+            <h2 className="text-xl font-bold">Generate Question Paper</h2>
+            <p className="text-sm text-gray-600 mt-1">Upload photos of textbook pages or paste long text. We'll pick the hardest sentences as questions.</p>
+
+            <div className="mt-3">
+              <input type="file" accept="image/*" onChange={handleImageUpload} />
+            </div>
+            <div className="mt-3">
+              <button onClick={() => handleGenerateQuizFromText(ocrText)} className="px-4 py-2 rounded bg-green-600 text-white">Make Paper</button>
+            </div>
+
+            <div className="mt-4">
+              <h3 className="font-semibold">Question Paper Preview</h3>
+              <div className="mt-2 p-4 border rounded">
+                {generatedQuiz.length === 0 ? (
+                  <div className="text-sm text-gray-500">No questions yet — upload an image or paste text and click "Make Paper".</div>
+                ) : (
+                  <ol className="list-decimal ml-5 space-y-2">
+                    {generatedQuiz.map(q => (
+                      <li key={q.id} className="py-2">{q.text}</li>
+                    ))}
+                  </ol>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {page === "chat" && (
+          <section className="bg-white p-6 rounded-2xl shadow-lg">
+            <div className="flex justify-between items-center">
+              <h2 className="text-xl font-bold">Built-in Chat</h2>
+              <div className="text-sm">Online: <span className="font-semibold">{onlineUsers.length}</span></div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-4">
+              <div className="col-span-2">
+                <div className="border h-60 p-3 overflow-auto rounded bg-gray-50">
+                  {chatMessages.length === 0 ? (
+                    <div className="text-sm text-gray-500">No messages yet.</div>
+                  ) : (
+                    chatMessages.map(m => (
+                      <div key={m.id} className="mb-2">
+                        <div className="text-xs text-gray-500">{m.from} • {m.time}</div>
+                        <div className="p-2 rounded bg-white shadow-sm">{m.text}{m.image && <img src={m.image} alt="sent" className="mt-2 max-w-xs" />}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <input value={message} onChange={e => setMessage(e.target.value)} className="flex-1 p-2 border rounded" placeholder="Type your message..." />
+                  <input type="file" accept="image/*" onChange={e => handleSendImageToChat(e.target.files[0])} />
+                  <button onClick={handleSendMessage} className="px-4 py-2 rounded bg-indigo-600 text-white">Send</button>
+                </div>
+
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => handleGenerateQuizFromText(ocrText)} className="px-3 py-1 rounded border">Generate Quiz from Chat Text</button>
+                  <button onClick={() => alert('Ask-question box is the chat input — type your question and press Send.') } className="px-3 py-1 rounded border">Ask Question</button>
+                </div>
+              </div>
+
+              <aside className="col-span-1">
+                <div className="p-3 border rounded">
+                  <div className="flex items-center justify-between mb-3">
+                    <strong>Group</strong>
+                    <button onClick={() => setGroupVisible(!groupVisible)} className="text-sm rounded px-2 py-1 border">{groupVisible ? 'Hide' : 'Show'}</button>
+                  </div>
+
+                  {groupVisible && (
+                    <div>
+                      <div className="text-xs text-gray-500 mb-2">Online users</div>
+                      <ul className="space-y-2">
+                        {onlineUsers.map((u, idx) => (
+                          <li className="flex items-center justify-between" key={idx}>
+                            <span>{u}</span>
+                            <span className="text-xs text-gray-400">●</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={handleAddUser} className="px-3 py-1 rounded border">Add People</button>
+                        <button onClick={() => navigator.clipboard?.writeText(window.location.href)} className="px-3 py-1 rounded border">Invite Link</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 p-3 border rounded">
+                  <div className="text-sm">Gallery</div>
+                  <div className="mt-2">
+                    <input type="file" accept="image/*" onChange={e => handleSendImageToChat(e.target.files[0])} />
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </section>
+        )}
+
+        {/* Dangerous animation overlay */}
+        {dangerAnim && (
+          <div className="fixed inset-0 flex items-center justify-center pointer-events-none z-50">
+            <div className="p-8 rounded-full bg-red-600/80 animate-pulse shadow-2xl transform scale-105">
+              <div className="text-white font-bold text-xl">DANGER</div>
+            </div>
+          </div>
+        )}
+
+        {/* Footer controls */}
+        <footer className="mt-8 text-center text-sm text-gray-500">
+          FutureMind • Demo UI • Replace images and fine-tune logic as needed.
+        </footer>
+      </main>
+
+      {/* Inline styles for rocket and small animations */}
+      <style>{`
         .rocket {
-            position: absolute;
-            width: 60px;
-            height: 120px;
-            background: linear-gradient(45deg, #ff6b6b, #ff9e6b);
-            border-radius: 50% 50% 20% 20%;
-            transform-origin: center bottom;
-            box-shadow: 0 0 30px rgba(255, 107, 107, 0.6);
+          width: 80px;
+          height: 120px;
+          background: linear-gradient(180deg,#fff,#f0f0f8);
+          border-radius: 12px;
+          box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+          position: absolute;
+          left: 0;
+          bottom: 0;
+          animation: float 3s ease-in-out infinite;
         }
-        
-        .rocket::before {
-            content: '';
-            position: absolute;
-            bottom: -20px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 30px;
-            height: 40px;
-            background: linear-gradient(to top, #ff9e6b, #ff6b6b);
-            border-radius: 0 0 15px 15px;
+        .rocket:before {
+          content: '';
+          position: absolute;
+          left: 50%;
+          transform: translateX(-50%);
+          bottom: -18px;
+          width: 20px;
+          height: 20px;
+          background: orange;
+          border-radius: 50%;
+          box-shadow: 0 0 12px 6px rgba(255,165,0,0.3);
+          animation: flame 0.2s linear infinite;
         }
-        
-        .flame {
-            position: absolute;
-            bottom: -60px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 20px;
-            height: 60px;
-            background: linear-gradient(to top, #ff8a00, #ff0000, transparent);
-            border-radius: 50%;
-            filter: blur(5px);
-            animation: flame 0.5s infinite alternate;
+        @keyframes float {
+          0% { transform: translateY(0) translateX(0) }
+          50% { transform: translateY(-18px) translateX(8px) }
+          100% { transform: translateY(0) translateX(0) }
         }
-        
         @keyframes flame {
-            0% { height: 60px; opacity: 0.8; }
-            100% { height: 80px; opacity: 1; }
+          0% { opacity: 1; transform: scale(1) }
+          100% { opacity: 0.2; transform: scale(0.6) }
         }
-        
-        .dangerous-animation {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.9);
-            display: none;
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .explosion {
-            width: 100px;
-            height: 100px;
-            border-radius: 50%;
-            background: radial-gradient(circle, #ff0000, #ff6b00, #000);
-            animation: explode 2s forwards;
-        }
-        
-        @keyframes explode {
-            0% { transform: scale(0); opacity: 1; }
-            50% { transform: scale(10); opacity: 0.8; }
-            100% { transform: scale(20); opacity: 0; }
-        }
-        
-        .chat-message {
-            animation: slideIn 0.3s ease-out;
-        }
-        
-        @keyframes slideIn {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-        
-        .button-glow {
-            animation: glow 2s infinite alternate;
-        }
-        
-        @keyframes glow {
-            from { box-shadow: 0 0 10px #ff6b6b, 0 0 20px #ff6b6b, 0 0 30px #ff6b6b; }
-            to { box-shadow: 0 0 20px #ff6b6b, 0 0 30px #ff6b6b, 0 0 40px #ff6b6b; }
-        }
-        
-        .online-user {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            background: #4ade80;
-            border-radius: 50%;
-            margin-right: 5px;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-    </style>
-</head>
-<body class="min-h-screen">
-    <!-- Rocket Animation Section -->
-    <div class="rocket-container" id="rocketScene">
-        <div class="rocket" id="mainRocket">
-            <div class="flame"></div>
-        </div>
+        .danger-rocket { filter: hue-rotate(260deg) contrast(1.2) }
+      `}</style>
     </div>
-    
-    <!-- Created By Section -->
-    <div class="text-center mt-8">
-        <h2 class="text-xl text-gray-300">Created by Asus Kumar</h2>
-    </div>
-    
-    <!-- Book Image Section -->
-    <div class="max-w-md mx-auto mt-8 p-6 bg-white/10 backdrop-blur-md rounded-xl shadow-2xl">
-        <div class="text-center">
-            <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/c29fbf56-99b1-4a8f-ac76-a462bfec427f.png" alt="Futuristic technology book with holographic cover displaying neural networks and AI concepts" class="w-48 h-64 object-cover mx-auto rounded-lg shadow-lg transform hover:scale-105 transition-transform duration-300">
-            <h3 class="orbitron-font text-2xl font-bold mt-4 text-cyan-400">Future Mind Chronicles</h3>
-            <p class="text-gray-300 mt-2">The ultimate guide to AI and neural networks</p>
-        </div>
-    </div>
-    
-    <!-- Main Content Tabs -->
-    <div class="max-w-4xl mx-auto mt-12 p-6">
-        <div class="flex space-x-4 mb-8">
-            <button id="quizTab" class="px-6 py-3 bg-cyan-600 rounded-lg font-semibold hover:bg-cyan-700 transition-colors">Take Quiz</button>
-            <button id="questionPaperTab" class="px-6 py-3 bg-purple-600 rounded-lg font-semibold hover:bg-purple-700 transition-colors">Generate Question Paper</button>
-            <button id="friendTab" class="px-6 py-3 bg-red-600 rounded-lg font-semibold hover:bg-red-700 transition-colors button-glow">Friend Zone</button>
-        </div>
-        
-        <!-- Quiz Section -->
-        <div id="quizSection" class="bg-white/5 p-6 rounded-xl backdrop-blur-sm">
-            <h3 class="orbitron-font text-2xl mb-4 text-green-400">Book Quiz Challenge</h3>
-            <div id="quizContainer" class="space-y-4">
-                <div class="p-4 bg-gray-800 rounded-lg">
-                    <p class="font-semibold">Q1: What is the primary function of a neural network?</p>
-                    <div class="mt-2 space-y-2">
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q1" class="accent-green-500">
-                            <span>Pattern Recognition</span>
-                        </label>
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q1" class="accent-green-500">
-                            <span>Data Storage</span>
-                        </label>
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q1" class="accent-green-500">
-                            <span>Network Security</span>
-                        </label>
-                    </div>
-                </div>
-                
-                <div class="p-4 bg-gray-800 rounded-lg">
-                    <p class="font-semibold">Q2: Which algorithm is most commonly used for training neural networks?</p>
-                    <div class="mt-2 space-y-2">
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q2" class="accent-green-500">
-                            <span>Backpropagation</span>
-                        </label>
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q2" class="accent-green-500">
-                            <span>QuickSort</span>
-                        </label>
-                        <label class="flex items-center space-x-2 cursor-pointer">
-                            <input type="radio" name="q2" class="accent-green-500">
-                            <span>Dijkstra's Algorithm</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-            <button class="mt-6 px-6 py-2 bg-green-600 rounded-lg hover:bg-green-700 transition-colors">Submit Answers</button>
-        </div>
-        
-        <!-- Question Paper Section -->
-        <div id="questionPaperSection" class="bg-white/5 p-6 rounded-xl backdrop-blur-sm hidden">
-            <h3 class="orbitron-font text-2xl mb-4 text-yellow-400">Generate Question Paper</h3>
-            <div class="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center">
-                <img src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/240c0039-ac6f-484c-8211-6e6b9b2ac41d.png" alt="Upload icon with cloud and arrow pointing up" class="w-16 h-16 mx-auto mb-4">
-                <p class="text-gray-300 mb-4">Upload photos of your study material</p>
-                <input type="file" id="photoUpload" accept="image/*" multiple class="hidden">
-                <button onclick="document.getElementById('photoUpload').click()" class="px-6 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors">Choose Photos</button>
-            </div>
-            <div id="uploadedPhotos" class="mt-4 grid grid-cols-3 gap-4 hidden">
-                <!-- Photos will be added here -->
-            </div>
-            <button id="generateQuestionsBtn" class="mt-6 px-6 py-2 bg-yellow-600 rounded-lg hover:bg-yellow-700 transition-colors disabled:opacity-50" disabled>Generate Hard Questions</button>
-        </div>
-        
-        <!-- Group Chat Section (Initially Hidden) -->
-        <div id="groupSection" class="bg-white/5 p-6 rounded-xl backdrop-blur-sm hidden">
-            <!-- Online Users Counter -->
-            <div class="flex justify-between items-center mb-4">
-                <div class="flex items-center">
-                    <span class="online-user"></span>
-                    <span id="onlineCount" class="text-green-400 font-semibold">5 Online</span>
-                </div>
-                <button id="addPeopleBtn" class="px-4 py-2 bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors">Add People</button>
-            </div>
-            
-            <!-- Chat Messages -->
-            <div id="chatMessages" class="h-64 overflow-y-auto mb-4 space-y-2 p-4 bg-gray-900 rounded-lg">
-                <div class="chat-message bg-blue-900/50 p-3 rounded-lg">
-                    <strong>User1:</strong> Hello everyone! Ready for the quiz?
-                </div>
-                <div class="chat-message bg-green-900/50 p-3 rounded-lg">
-                    <strong>User2:</strong> Just uploaded my study notes!
-                </div>
-            </div>
-            
-            <!-- Chat Input -->
-            <div class="flex space-x-2">
-                <input type="text" id="chatInput" placeholder="Type your message..." class="flex-1 px-4 py-2 bg-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500">
-                
-                <!-- Gallery Button -->
-                <button id="galleryBtn" class="px-4 py-2 bg-purple-600 rounded-lg hover:bg-purple-700 transition-colors">
-                    📷
-                </button>
-                
-                <!-- Generate Quiz Button -->
-                <button id="generateQuizChatBtn" class="px-4 py-2 bg-yellow-600 rounded-lg hover:bg-yellow-700 transition-colors" disabled>
-                    Generate Quiz
-                </button>
-                
-                <!-- Send Button -->
-                <button id="sendBtn" class="px-4 py-2 bg-green-600 rounded-lg hover:bg-green-700 transition-colors">
-                    Send
-                </button>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Dangerous Animation Overlay -->
-    <div class="dangerous-animation" id="dangerousAnimation">
-        <div class="explosion"></div>
-    </div>
-    
-    <script>
-        // Rocket Animation
-        gsap.to("#mainRocket", {
-            duration: 8,
-            x: () => Math.random() * 300 - 150,
-            y: () => Math.random() * 200 - 100,
-            rotation: () => Math.random() * 30 - 15,
-            ease: "power1.inOut",
-            repeat: -1,
-            yoyo: true
-        });
-        
-        // Tab Switching
-        const quizTab = document.getElementById('quizTab');
-        const questionPaperTab = document.getElementById('questionPaperTab');
-        const friendTab = document.getElementById('friendTab');
-        const quizSection = document.getElementById('quizSection');
-        const questionPaperSection = document.getElementById('questionPaperSection');
-        const groupSection = document.getElementById('groupSection');
-        const dangerousAnimation = document.getElementById('dangerousAnimation');
-        
-        quizTab.addEventListener('click', () => {
-            quizSection.classList.remove('hidden');
-            questionPaperSection.classList.add('hidden');
-            groupSection.classList.add('hidden');
-        });
-        
-        questionPaperTab.addEventListener('click', () => {
-            quizSection.classList.add('hidden');
-            questionPaperSection.classList.remove('hidden');
-            groupSection.classList.add('hidden');
-        });
-        
-        friendTab.addEventListener('click', () => {
-            // Show dangerous animation first
-            dangerousAnimation.style.display = 'flex';
-            
-            setTimeout(() => {
-                dangerousAnimation.style.display = 'none';
-                quizSection.classList.add('hidden');
-                questionPaperSection.classList.add('hidden');
-                groupSection.classList.remove('hidden');
-                
-                // Simulate online users
-                updateOnlineUsers();
-            }, 2000);
-        });
-        
-        // Photo Upload Handling
-        const photoUpload = document.getElementById('photoUpload');
-        const uploadedPhotos = document.getElementById('uploadedPhotos');
-        const generateQuestionsBtn = document.getElementById('generateQuestionsBtn');
-        
-        photoUpload.addEventListener('change', (event) => {
-            uploadedPhotos.classList.remove('hidden');
-            uploadedPhotos.innerHTML = '';
-            
-            Array.from(event.target.files).forEach((file, index) => {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    const imgDiv = document.createElement('div');
-                    imgDiv.className = 'relative';
-                    imgDiv.innerHTML = `
-                        <img src="${e.target.result}" alt="Uploaded study material ${index + 1}" class="w-full h-32 object-cover rounded-lg">
-                        <div class="absolute top-2 right-2 bg-red-600 rounded-full w-6 h-6 flex items-center justify-center cursor-pointer" onclick="removePhoto(this)">×</div>
-                    `;
-                    uploadedPhotos.appendChild(imgDiv);
-                };
-                reader.readAsDataURL(file);
-            });
-            
-            generateQuestionsBtn.disabled = false;
-            generateQuestionsBtn.classList.add('button-glow');
-        });
-        
-        function removePhoto(element) {
-            element.parentElement.remove();
-            if (uploadedPhotos.children.length === 0) {
-                generateQuestionsBtn.disabled = true;
-                generateQuestionsBtn.classList.remove('button-glow');
-            }
-        }
-        
-        // Generate Questions from Photos
-        generateQuestionsBtn.addEventListener('click', () => {
-            generateQuestionsBtn.innerHTML = 'Generating...';
-            generateQuestionsBtn.disabled = true;
-            
-            setTimeout(() => {
-                alert('Questions generated successfully from your photos! Hardest questions have been extracted.');
-                generateQuestionsBtn.innerHTML = 'Generate Hard Questions';
-                generateQuestionsBtn.disabled = false;
-            }, 2000);
-        });
-        
-        // Chat Functionality
-        const chatInput = document.getElementById('chatInput');
-        const chatMessages = document.getElementById('chatMessages');
-        const sendBtn = document.getElementById('sendBtn');
-        const galleryBtn = document.getElementById('galleryBtn');
-        const generateQuizChatBtn = document.getElementById('generateQuizChatBtn');
-        
-        sendBtn.addEventListener('click', sendMessage);
-        chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
-        
-        function sendMessage() {
-            const message = chatInput.value.trim();
-            if (message) {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'chat-message bg-cyan-900/50 p-3 rounded-lg';
-                messageDiv.innerHTML = `<strong>You:</strong> ${message}`;
-                chatMessages.appendChild(messageDiv);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-                chatInput.value = '';
-            }
-        }
-        
-        galleryBtn.addEventListener('click', () => {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = 'image/*';
-            fileInput.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const messageDiv = document.createElement('div');
-                        messageDiv.className = 'chat-message bg-purple-900/50 p-3 rounded-lg';
-                        messageDiv.innerHTML = `
-                            <strong>You:</strong> Shared a photo
-                            <img src="${event.target.result}" alt="Shared study material" class="w-32 h-32 object-cover rounded-lg mt-2">
-                        `;
-                        chatMessages.appendChild(messageDiv);
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                        
-                        // Enable generate quiz button
-                        generateQuizChatBtn.disabled = false;
-                        generateQuizChatBtn.classList.add('button-glow');
-                    };
-                    reader.readAsDataURL(file);
-                }
-            };
-            fileInput.click();
-        });
-        
-        generateQuizChatBtn.addEventListener('click', () => {
-            generateQuizChatBtn.innerHTML = 'Generating Quiz...';
-            generateQuizChatBtn.disabled = true;
-            
-            setTimeout(() => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = 'chat-message bg-yellow-900/50 p-3 rounded-lg';
-                messageDiv.innerHTML = `
-                    <strong>System:</strong> Quiz generated from your photo!
-                    <div class="mt-2 p-2 bg-gray-800 rounded">
-                        <p><strong>Q:</strong> Based on the uploaded material, what is the time complexity of binary search?</p>
-                        <p><strong>Q:</strong> Explain the difference between supervised and unsupervised learning.</p>
-                    </div>
-                `;
-                chatMessages.appendChild(messageDiv);
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-                
-                generateQuizChatBtn.innerHTML = 'Generate Quiz';
-                generateQuizChatBtn.disabled = false;
-            }, 2000);
-        });
-        
-        // Online Users Simulation
-        function updateOnlineUsers() {
-            const onlineCount = document.getElementById('onlineCount');
-            let count = 5;
+  );
+}
